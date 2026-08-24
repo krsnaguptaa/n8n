@@ -5,9 +5,10 @@ import {
 	resolveSetNeighbors,
 	resolveSetCanvasGroup,
 	buildNodesAttachment,
+	countAttachedNodes,
 } from './buildNodesAttachment';
 import type { NodeContextWorkflow } from './buildNodesAttachment';
-import { instanceAiNodesAttachmentSchema } from '@n8n/api-types';
+import { instanceAiNodesAttachmentSchema, type InstanceAiAttachment } from '@n8n/api-types';
 
 function wf(over: Partial<NodeContextWorkflow> = {}): NodeContextWorkflow {
 	return {
@@ -178,5 +179,26 @@ describe('buildNodesAttachment', () => {
 		const res = buildNodesAttachment('w1', ['n1', 'n2'], w);
 		expect(instanceAiNodesAttachmentSchema.safeParse(res!.attachment).success).toBe(true);
 		expect(res!.attachment.sets[0].inputNode).toBeUndefined();
+	});
+});
+
+describe('countAttachedNodes', () => {
+	const nodesAtt = (...counts: number[]): InstanceAiAttachment => ({
+		type: 'nodes',
+		workflowId: 'w1',
+		sets: counts.map((c) => ({
+			nodes: Array.from({ length: c }, (_, i) => ({ id: `n${i}`, name: `N${i}` })),
+		})),
+	});
+
+	it('is 0 for undefined or no node attachments', () => {
+		expect(countAttachedNodes()).toBe(0);
+		expect(
+			countAttachedNodes([{ type: 'file', data: 'x', mimeType: 'image/png', fileName: 'f.png' }]),
+		).toBe(0);
+	});
+
+	it('sums nodes across every set and every nodes-attachment', () => {
+		expect(countAttachedNodes([nodesAtt(2, 3), nodesAtt(1)])).toBe(6);
 	});
 });

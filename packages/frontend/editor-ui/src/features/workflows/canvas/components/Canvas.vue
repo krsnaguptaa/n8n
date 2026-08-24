@@ -100,7 +100,10 @@ import { useFocusedNodesStore } from '@/features/ai/assistant/focusedNodes.store
 import { useChatPanelStore } from '@/features/ai/assistant/chatPanel.store';
 import { useSetupPanelStore } from '@/features/setupPanel/setupPanel.store';
 import { useCanvasAgentNodeGeometry } from '../composables/useCanvasAgentNodeGeometry';
-import { useAddNodesToChat } from '@/features/ai/instanceAi/composables/useAddNodesToChat';
+import {
+	useAddNodesToChat,
+	type AddNodesToChatSource,
+} from '@/features/ai/instanceAi/composables/useAddNodesToChat';
 import type { NodeContextWorkflow } from '@/features/ai/instanceAi/utils/buildNodesAttachment';
 import { useInstanceAiStore } from '@/features/ai/instanceAi/instanceAi.store';
 import { useInstanceAiEditorCapability } from '@/app/composables/useInstanceAiEditorCapability';
@@ -621,7 +624,10 @@ function buildNodeContextWorkflow(): NodeContextWorkflow {
 	};
 }
 
-async function onAddNodesToChat(ids: string[] = selectedNodeIdsWithGroupMembers.value) {
+async function onAddNodesToChat(
+	ids: string[] = selectedNodeIdsWithGroupMembers.value,
+	source: AddNodesToChatSource = 'keyboard',
+) {
 	const doc = workflowDocumentStore.value;
 	await addSelectedNodesToChat({
 		workflowId: doc.workflowId,
@@ -631,6 +637,7 @@ async function onAddNodesToChat(ids: string[] = selectedNodeIdsWithGroupMembers.
 		onStaged: () => instanceAiStore.requestComposerFocus(),
 		workflowName: doc.name,
 		workflowSnapshot: doc.getSnapshot(),
+		source,
 	});
 }
 
@@ -960,7 +967,7 @@ function onCanvasGroupExtract(groupId: string) {
 function onCanvasGroupAddNodesToChat(groupId: string) {
 	const group = workflowDocumentStore.value.getGroupById(groupId);
 	if (!group) return;
-	void onAddNodesToChat([...group.nodeIds]);
+	void onAddNodesToChat([...group.nodeIds], 'group_title_bar');
 }
 
 // Expand or collapse groups through the same path as the single toggle so
@@ -1583,7 +1590,7 @@ async function onContextMenuAction(action: ContextMenuAction, nodeIds: string[],
 			return;
 		}
 		case 'add_nodes_to_chat': {
-			void onAddNodesToChat(nodeIds);
+			void onAddNodesToChat(nodeIds, 'context_menu');
 			return;
 		}
 	}
@@ -1907,7 +1914,7 @@ defineExpose({
 					@focus="onFocusNode"
 					@replace:node="onReplaceNode"
 					@add:ai="onAddToAi"
-					@add-nodes-to-chat="onAddNodesToChat([$event])"
+					@add-nodes-to-chat="onAddNodesToChat([$event], 'node_toolbar')"
 				>
 					<template v-if="$slots.nodeToolbar" #toolbar="toolbarProps">
 						<slot name="nodeToolbar" v-bind="toolbarProps" />
@@ -1950,7 +1957,7 @@ defineExpose({
 			:read-only="readOnly || suppressInteraction"
 			@group-created="onNodeGroupCreated"
 			@extract-workflow="emit('extract-workflow', $event)"
-			@add-nodes-to-chat="onAddNodesToChat($event)"
+			@add-nodes-to-chat="onAddNodesToChat($event, 'selection_toolbar')"
 		/>
 
 		<Transition name="minimap">
