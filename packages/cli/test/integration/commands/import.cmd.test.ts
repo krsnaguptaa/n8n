@@ -6,16 +6,19 @@ import {
 	getAllWorkflows,
 } from '@n8n/backend-test-utils';
 import { GlobalConfig } from '@n8n/config';
+import type { Project } from '@n8n/db';
 import { WorkflowPublishHistoryRepository, WorkflowHistoryRepository } from '@n8n/db';
 import { Container } from '@n8n/di';
 import type { INodeType } from 'n8n-workflow';
 import { nanoid } from 'nanoid';
+import { mock } from 'vitest-mock-extended';
 
 import '@/zod-alias-support';
 import { ActiveWorkflowManager } from '@/active-workflow-manager';
 import { ImportWorkflowsCommand } from '@/commands/import/workflow';
 import { LoadNodesAndCredentials } from '@/load-nodes-and-credentials';
 import { NodeTypes } from '@/node-types';
+import { OwnershipService } from '@/services/ownership.service';
 import { WorkflowService } from '@/workflows/workflow.service';
 import { setupTestCommand } from '@test-integration/utils/test-command';
 
@@ -397,6 +400,12 @@ describe('--activeState flag', () => {
 		// (getWorkflowExecutionData → VariablesService.getAllCached → CacheService/Redis)
 		vi.spyOn(Container.get(WorkflowService) as any, '_findConflictingWebhooks').mockResolvedValue(
 			[],
+		);
+
+		// Publishing resolves the owning project, and that lookup is cached — another
+		// CacheService/Redis dependency this queue-mode suite has no infrastructure for.
+		vi.spyOn(Container.get(OwnershipService), 'getWorkflowProjectCached').mockResolvedValue(
+			mock<Project>({ id: 'project-id' }),
 		);
 
 		mockNodeTypes.getByNameAndVersion.mockImplementation((nodeType) => {

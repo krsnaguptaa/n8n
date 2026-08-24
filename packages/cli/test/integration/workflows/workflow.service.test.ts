@@ -114,8 +114,8 @@ beforeAll(async () => {
 		Container.get(WorkflowHookContextService), // workflowHookContextService
 		workflowPublishGuard,
 		mock(), // workflowMutationHooks
-		// Real service on purpose: with no policy backend registered it clears every save,
-		// so these tests also prove save behavior is unchanged when the module is off.
+		// Real service on purpose: with no backend registered it clears every save and
+		// publish, so these tests also prove behavior is unchanged with the module off.
 		Container.get(PolicyEnforcementService), // policyEnforcementService
 	);
 });
@@ -342,6 +342,26 @@ describe('update()', () => {
 });
 
 describe('activateWorkflow()', () => {
+	// The rest of this suite proves activation is unchanged with the module off; this
+	// one pins that the call actually happens.
+	test('should enforce the publish policy with the version being activated', async () => {
+		const owner = await createOwner();
+		const workflow = await createWorkflowWithHistory({}, owner);
+		const enforceSpy = vi.spyOn(Container.get(PolicyEnforcementService), 'enforceWorkflowPublish');
+
+		const updatedWorkflow = await workflowService.activateWorkflow(owner, workflow.id);
+
+		expect(enforceSpy).toHaveBeenCalledExactlyOnceWith({
+			workflow: {
+				id: workflow.id,
+				name: workflow.name,
+				nodes: expect.any(Array),
+			},
+			projectId: expect.any(String),
+		});
+		expect(updatedWorkflow.activeVersionId).toBe(workflow.versionId);
+	});
+
 	test('should activate current workflow version if no version provided', async () => {
 		const owner = await createOwner();
 		const workflow = await createWorkflowWithHistory({}, owner);

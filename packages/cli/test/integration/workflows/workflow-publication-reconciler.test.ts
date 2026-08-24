@@ -23,12 +23,12 @@ import { ActiveWorkflowManager } from '@/active-workflow-manager';
 import { ExecutionService } from '@/executions/execution.service';
 import { ExternalHooks } from '@/external-hooks';
 import { Push } from '@/push';
-import { OwnershipService } from '@/services/ownership.service';
 import { WorkflowPublicationOutboxConsumer } from '@/workflows/publication/workflow-publication-outbox-consumer';
 import { WorkflowPublicationReconciler } from '@/workflows/publication/workflow-publication-reconciler.service';
 import { WorkflowService } from '@/workflows/workflow.service';
 
 import { createOwner } from '../shared/db/users';
+import { mockWorkflowOwnership } from '../shared/mock-workflow-ownership';
 import * as utils from '../shared/utils/';
 
 // Peripheral services with side effects we don't exercise here; the webhook
@@ -39,7 +39,7 @@ mockInstance(Push);
 mockInstance(ExternalSecretsProxy);
 mockInstance(ExecutionService);
 mockInstance(WorkflowService);
-mockInstance(OwnershipService);
+mockWorkflowOwnership();
 mockInstance(ExternalHooks);
 
 let reconciler: WorkflowPublicationReconciler;
@@ -327,6 +327,42 @@ describe('WorkflowPublicationReconciler (integration)', () => {
 		// mapping back to the active version.
 		expect(await publishedVersionRepository.getPublishedVersionId(workflow.id)).toBe(newVersionId);
 		expect(await outboxRepository.countBy({ workflowId: workflow.id })).toBe(3);
+		expect(await outboxRepository.claimNextPendingRecord()).toBeNull();
+	});
+
+	// A publication failing before the mapping advances (e.g. a policy block) leaves
+	// the skew permanently, so re-enqueueing would loop on every pass.
+	test('leaves a workflow skewed by a terminally failed publication alone', async () => {
+		const owner = await createOwner();
+
+		const trigger = scheduleNode('skew-failed');
+		const workflow = await createWorkflowWithHistory({ active: true, nodes: [trigger] }, owner);
+		await setActiveVersion(workflow.id, workflow.versionId);
+
+		await outboxRepository.enqueue(workflow.id, workflow.versionId, 'publish');
+		await consumer.processRecord((await outboxRepository.claimNextPendingRecord())!, abortSignal);
+
+		// A newer version is made active, but its publication fails before the
+		// mapping advances — so activeVersionId and publishedVersionId diverge.
+		const newVersionId = 'version-2-failed-publish';
+		await createWorkflowHistory(workflow, owner, undefined, {
+			versionId: newVersionId,
+			nodes: [trigger],
+		});
+		await setActiveVersion(workflow.id, newVersionId);
+		await outboxRepository.enqueue(workflow.id, newVersionId, 'publish');
+		const failing = (await outboxRepository.claimNextPendingRecord())!;
+		await outboxRepository.markFailed(failing.id, 'Blocked by policy');
+
+		expect(await publishedVersionRepository.getPublishedVersionId(workflow.id)).toBe(
+			workflow.versionId,
+		);
+
+		await reconciler.reconcile('reconcile');
+
+		// No third record: the skew is real but permanent, so the reconciler must
+		// not keep retrying it.
+		expect(await outboxRepository.countBy({ workflowId: workflow.id })).toBe(2);
 		expect(await outboxRepository.claimNextPendingRecord()).toBeNull();
 	});
 

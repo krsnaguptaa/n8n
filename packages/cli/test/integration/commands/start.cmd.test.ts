@@ -31,13 +31,13 @@ import { Push } from '@/push';
 import { PubSubEventBus } from '@/scaling/pubsub/pubsub.eventbus';
 import { DurableScheduler } from '@/scheduling/durable-scheduler';
 import { Server } from '@/server';
-import { OwnershipService } from '@/services/ownership.service';
 import { ExecutionsPruningService } from '@/services/pruning/executions-pruning.service';
 import { WorkflowHistoryCompactionService } from '@/services/pruning/workflow-history-compaction.service';
 import { WorkflowStatisticsRollupService } from '@/services/workflow-statistics-rollup.service';
 import { WorkflowService } from '@/workflows/workflow.service';
 
 import { createOwner } from '../shared/db/users';
+import { mockWorkflowOwnership } from '../shared/mock-workflow-ownership';
 import * as utils from '../shared/utils/';
 
 // The publication modules register their @OnPubSubEvent handlers only when
@@ -50,7 +50,7 @@ mockInstance(ActiveExecutions);
 mockInstance(Push);
 mockInstance(ExternalSecretsProxy);
 mockInstance(WorkflowService);
-mockInstance(OwnershipService);
+mockWorkflowOwnership();
 mockInstance(ExternalHooks);
 mockInstance(ExecutionsPruningService);
 mockInstance(WorkflowHistoryCompactionService);

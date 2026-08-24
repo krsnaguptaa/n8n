@@ -55,6 +55,7 @@ import { RedactionEnforcementService } from '@/modules/redaction/redaction-enfor
 import { NodeTypes } from '@/node-types';
 import { userHasScopes } from '@/permissions.ee/check-access';
 import { PolicyEnforcementService } from '@/policy/policy-enforcement.service';
+import { resolvePolicyProjectId } from '@/policy/policy-project';
 import type { ListQuery } from '@/requests';
 import { hasSharing } from '@/requests';
 import { PollTriggerJobRegistrar } from '@/scheduling/poll-trigger-node/poll-trigger-job-registrar';
@@ -860,6 +861,10 @@ export class WorkflowService {
 			this._validateTriggerNodeIds(workflowId, versionToActivate);
 		}
 
+		// The candidate below shares this array with the version row, and the hook may
+		// mutate it in place, so snapshot what will actually be registered.
+		const nodesToPublish = structuredClone(versionToActivate.nodes);
+
 		// Run hook before destructive state changes so a rejection leaves
 		// the previous active version running instead of deactivating it.
 		const candidateWorkflow = this.workflowRepository.create({
@@ -883,6 +888,17 @@ export class WorkflowService {
 				description: getErrorDescription(error),
 			});
 		}
+
+		// Polices what gets registered — the version row, not the hook's candidate.
+		// Enforced on a same-version republish too.
+		await this.policyEnforcementService.enforceWorkflowPublish({
+			workflow: {
+				id: workflowId,
+				name: workflow.name,
+				nodes: nodesToPublish,
+			},
+			projectId: await resolvePolicyProjectId(this.ownershipService, this.logger, workflowId),
+		});
 
 		// re-applying the already-published version (e.g. a settings-only update)
 		// publishes no new version, so the review gate must not block it.

@@ -22,7 +22,6 @@ import { ActiveWorkflowManager } from '@/active-workflow-manager';
 import { ExecutionService } from '@/executions/execution.service';
 import { ExternalHooks } from '@/external-hooks';
 import { Push } from '@/push';
-import { OwnershipService } from '@/services/ownership.service';
 import { Telemetry } from '@/telemetry';
 import { PublishedWorkflowTriggerDeactivator } from '@/workflows/publication/published-workflow-trigger-deactivator';
 import { WorkflowPublicationLifecycleLock } from '@/workflows/publication/workflow-publication-lifecycle-lock';
@@ -31,6 +30,7 @@ import { WorkflowService } from '@/workflows/workflow.service';
 
 import { createOwner } from '../shared/db/users';
 import { createWorkflowHistoryItem } from '../shared/db/workflow-history';
+import { mockWorkflowOwnership } from '../shared/mock-workflow-ownership';
 import * as utils from '../shared/utils/';
 
 // Peripheral services with side effects we don't exercise here; the webhook
@@ -41,7 +41,7 @@ mockInstance(Push);
 mockInstance(ExternalSecretsProxy);
 mockInstance(ExecutionService);
 const workflowService = mockInstance(WorkflowService);
-mockInstance(OwnershipService);
+mockWorkflowOwnership();
 mockInstance(ExternalHooks);
 mockInstance(Telemetry);
 

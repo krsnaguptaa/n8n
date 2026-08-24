@@ -4,7 +4,7 @@ import {
 	testDb,
 	mockInstance,
 } from '@n8n/backend-test-utils';
-import type { IWorkflowDb, Project, User, WebhookEntity } from '@n8n/db';
+import type { IWorkflowDb, User, WebhookEntity } from '@n8n/db';
 import { WorkflowRepository } from '@n8n/db';
 import { Container } from '@n8n/di';
 import { InstanceSettings, ExternalSecretsProxy } from 'n8n-core';
@@ -25,14 +25,15 @@ import { ActiveWorkflowManager } from '@/active-workflow-manager';
 import { ExecutionService } from '@/executions/execution.service';
 import { ExternalHooks } from '@/external-hooks';
 import { NodeTypes } from '@/node-types';
+import { PolicyEnforcementService } from '@/policy/policy-enforcement.service';
 import { Push } from '@/push';
-import { OwnershipService } from '@/services/ownership.service';
 import * as WebhookHelpers from '@/webhooks/webhook-helpers';
 import { WebhookService } from '@/webhooks/webhook.service';
 import * as AdditionalData from '@/workflow-execute-additional-data';
 import { WorkflowService } from '@/workflows/workflow.service';
 
 import { createOwner } from './shared/db/users';
+import { mockWorkflowOwnership } from './shared/mock-workflow-ownership';
 import * as utils from './shared/utils/';
 
 mockInstance(ActiveExecutions);
@@ -40,9 +41,7 @@ mockInstance(Push);
 mockInstance(ExternalSecretsProxy);
 mockInstance(ExecutionService);
 mockInstance(WorkflowService);
-mockInstance(OwnershipService, {
-	getWorkflowProjectCached: vi.fn().mockResolvedValue(mock<Project>({ id: 'project-id' })),
-});
+mockWorkflowOwnership();
 
 const webhookService = mockInstance(WebhookService);
 const externalHooks = mockInstance(ExternalHooks);
@@ -135,6 +134,18 @@ describe('init()', () => {
 		await activeWorkflowManager.init();
 
 		expect(validateWorkflowHasTriggerLikeNodeSpy).toHaveBeenCalledTimes(2);
+	});
+
+	// Startup reactivation is a publish in its own right, or a blocked workflow comes
+	// back on the next restart. Real service, no backend: it clears, so both start.
+	it('should enforce the publish policy for each workflow it reactivates', async () => {
+		const enforceSpy = vi.spyOn(Container.get(PolicyEnforcementService), 'enforceWorkflowPublish');
+		await Promise.all([createActiveWorkflow(), createActiveWorkflow()]);
+
+		await activeWorkflowManager.init();
+
+		expect(enforceSpy).toHaveBeenCalledTimes(2);
+		expect(activeWorkflowManager.allActiveInMemory()).toHaveLength(2);
 	});
 });
 
