@@ -19,6 +19,7 @@ import type {
 	Workflow,
 	INode,
 	INodeType,
+	INodeTypes,
 	IDataObject,
 	IWebhookResponseData,
 	IN8nHttpFullResponse,
@@ -595,8 +596,36 @@ describe('prepareExecutionData', () => {
 		pinData: { nodeA: [{ json: { pinned: true } }] },
 	});
 
+	// Mirrors the real `triggerIdentity` / `triggerExecutionSeeding` declarations
+	// on Webhook.node.ts, McpTrigger.node.ts, and MicrosoftAgent365Trigger.node.ts.
+	// Chat Trigger isn't migrated yet, so it's deliberately absent here too —
+	// `reconcileSeededExecutionStack` still special-cases it directly.
+	const nodeTypes = {
+		getByNameAndVersion: vi.fn((type: string) =>
+			mock<INodeType>({
+				description: {
+					triggerIdentity:
+						type === WEBHOOK_NODE_TYPE
+							? {
+									establishes: (node: INode) => node.parameters?.authentication === 'n8nOAuth2',
+									mergeStrategy: 'replace',
+									gate: 'reactive',
+								}
+							: type === MCP_TRIGGER_NODE_TYPE
+								? { establishes: true, mergeStrategy: 'index-merge', gate: 'manual' }
+								: undefined,
+					triggerExecutionSeeding:
+						type === MICROSOFT_AGENT365_TRIGGER_NODE_TYPE
+							? { mergeStrategy: 'index-merge' }
+							: undefined,
+				},
+			}),
+		),
+	} as unknown as INodeTypes;
+
 	test('should create new execution data when not provided', () => {
 		const { runExecutionData, pinData } = prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -630,6 +659,7 @@ describe('prepareExecutionData', () => {
 		} as IRunExecutionData;
 
 		prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -644,6 +674,7 @@ describe('prepareExecutionData', () => {
 
 	test('should set destination node when provided', () => {
 		const { runExecutionData } = prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -666,6 +697,7 @@ describe('prepareExecutionData', () => {
 		};
 
 		const { runExecutionData } = prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -678,6 +710,7 @@ describe('prepareExecutionData', () => {
 
 	test('should set pinData when execution mode is manual', () => {
 		const { runExecutionData, pinData } = prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -694,6 +727,7 @@ describe('prepareExecutionData', () => {
 
 	test('should not set pinData when execution mode is not manual or evaluation', () => {
 		const { runExecutionData, pinData } = prepareExecutionData(
+			nodeTypes,
 			'webhook',
 			workflowStartNode,
 			webhookResultData,
@@ -710,6 +744,7 @@ describe('prepareExecutionData', () => {
 
 	test('should populate manualData.userId for manual executions when userId is provided', () => {
 		const { runExecutionData } = prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -726,6 +761,7 @@ describe('prepareExecutionData', () => {
 
 	test('should not populate manualData when userId is undefined', () => {
 		const { runExecutionData } = prepareExecutionData(
+			nodeTypes,
 			'manual',
 			workflowStartNode,
 			webhookResultData,
@@ -742,6 +778,7 @@ describe('prepareExecutionData', () => {
 
 	test('should not populate manualData for non-manual execution modes', () => {
 		const { runExecutionData } = prepareExecutionData(
+			nodeTypes,
 			'webhook',
 			workflowStartNode,
 			webhookResultData,
@@ -790,6 +827,7 @@ describe('prepareExecutionData', () => {
 				} as IRunExecutionData;
 
 				const { runExecutionData } = prepareExecutionData(
+					nodeTypes,
 					'trigger',
 					seededTriggerNode,
 					webhookResultData,
@@ -818,6 +856,7 @@ describe('prepareExecutionData', () => {
 			});
 
 			const { runExecutionData } = prepareExecutionData(
+				nodeTypes,
 				'trigger',
 				microsoftAgentNode,
 				webhookResultData,
@@ -850,6 +889,7 @@ describe('prepareExecutionData', () => {
 			} as IRunExecutionData;
 
 			const { runExecutionData } = prepareExecutionData(
+				nodeTypes,
 				'trigger',
 				microsoftAgentNode,
 				webhookResultData,
@@ -889,6 +929,7 @@ describe('prepareExecutionData', () => {
 			} as IRunExecutionData;
 
 			const { runExecutionData } = prepareExecutionData(
+				nodeTypes,
 				'trigger',
 				regularNode,
 				webhookResultData,
@@ -941,6 +982,7 @@ describe('prepareExecutionData', () => {
 			} as IRunExecutionData;
 
 			const { runExecutionData } = prepareExecutionData(
+				nodeTypes,
 				'trigger',
 				identityWebhookNode,
 				webhookResultData,
@@ -997,6 +1039,7 @@ describe('prepareExecutionData', () => {
 			};
 
 			const { runExecutionData } = prepareExecutionData(
+				nodeTypes,
 				'trigger',
 				identityWebhookNode,
 				multiMethodResult,
@@ -1038,6 +1081,7 @@ describe('prepareExecutionData', () => {
 			} as IRunExecutionData;
 
 			const { runExecutionData } = prepareExecutionData(
+				nodeTypes,
 				'trigger',
 				microsoftAgentNode,
 				webhookResultData,
@@ -1176,9 +1220,19 @@ describe('executeWebhook credential-status gate', () => {
 			id: WORKFLOW_ID,
 			name: 'Test Workflow',
 			nodeTypes: {
-				getByNameAndVersion: vi
-					.fn()
-					.mockReturnValue(mock<INodeType>({ description: { name: 'webhook' } })),
+				getByNameAndVersion: vi.fn().mockReturnValue(
+					mock<INodeType>({
+						description: {
+							name: 'webhook',
+							// Mirrors Webhook.node.ts's real declaration.
+							triggerIdentity: {
+								establishes: (node: INode) => node.parameters?.authentication === 'n8nOAuth2',
+								mergeStrategy: 'replace',
+								gate: 'reactive',
+							},
+						},
+					}),
+				),
 			},
 			expression: {
 				getSimpleParameterValue: vi.fn().mockReturnValue('onReceived'),
@@ -1356,9 +1410,19 @@ describe('executeWebhook establishTriggerIdentity', () => {
 			id: WORKFLOW_ID,
 			name: 'Test Workflow',
 			nodeTypes: {
-				getByNameAndVersion: vi
-					.fn()
-					.mockReturnValue(mock<INodeType>({ description: { name: 'webhook' } })),
+				getByNameAndVersion: vi.fn().mockReturnValue(
+					mock<INodeType>({
+						description: {
+							name: 'webhook',
+							// Mirrors Webhook.node.ts's real declaration.
+							triggerIdentity: {
+								establishes: (node: INode) => node.parameters?.authentication === 'n8nOAuth2',
+								mergeStrategy: 'replace',
+								gate: 'reactive',
+							},
+						},
+					}),
+				),
 			},
 			expression: {
 				getSimpleParameterValue: vi.fn().mockReturnValue('onReceived'),
