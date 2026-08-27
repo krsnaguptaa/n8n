@@ -99,6 +99,14 @@ export class DurableScheduler implements Scheduler {
 		this.registerTaskHandler(pollTriggerTaskHandler.taskType, pollTriggerTaskHandler);
 	}
 
+	/**
+	 * Whether this instance runs the scheduler loops, so a handler registered
+	 * here will actually be dispatched to.
+	 */
+	isActive(): boolean {
+		return this.scheduler !== undefined;
+	}
+
 	registerTaskHandler(taskType: string, handler: TaskHandler): void {
 		if (this.scheduler === undefined) {
 			this.logger.debug(
