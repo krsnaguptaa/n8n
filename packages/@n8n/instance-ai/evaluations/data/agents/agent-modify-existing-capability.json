@@ -1,0 +1,62 @@
+{
+	"description": "AGENT-698 regression: a user opens an existing agent and asks to add a capability. The assistant must treat this as a change to the existing agent and route it through the agent-builder path, targeting that agent — not reclassify it as a workflow change. Intent-resolution case (agents tier): graded on processExpectations, builds are never exercised. The inline seed restores one agent and binds the thread to it, so the live turn continues that agent.",
+	"seed": {
+		"mode": "inline",
+		"messages": [
+			{
+				"role": "user",
+				"text": "Build me an agent that triages customer messages from our helpdesk."
+			},
+			{
+				"id": "seed-asst-1",
+				"type": "llm",
+				"role": "assistant",
+				"createdAt": "2020-01-01T00:00:01.000Z",
+				"content": [
+					{
+						"type": "text",
+						"text": "I've created your triage agent. It can read incoming customer messages, decide how urgent each one is, and draft a reply for you to approve."
+					},
+					{
+						"type": "tool-call",
+						"toolName": "build-agent",
+						"input": {
+							"message": "Build an agent that triages customer messages from our helpdesk.",
+							"name": "Support Triage"
+						},
+						"output": {
+							"ok": true,
+							"agentId": "agent-triage-001",
+							"agentRef": "support-triage",
+							"agentName": "Support Triage"
+						}
+					}
+				]
+			}
+		],
+		"agents": [
+			{
+				"id": "agent-triage-001",
+				"config": {
+					"name": "Support Triage",
+					"model": "anthropic/claude-sonnet-4-5",
+					"instructions": "Triage incoming customer messages: assess urgency and draft a reply for approval."
+				}
+			}
+		]
+	},
+	"conversation": [
+		{
+			"role": "user",
+			"text": "Make it also file a Linear ticket when it can't resolve an issue."
+		}
+	],
+	"complexity": "medium",
+	"tags": ["intent", "agent", "modification", "regression"],
+	"datasets": ["agents"],
+	"processExpectations": [
+		"Treats the request as a change to the existing Support Triage agent and routes it through the agent-builder path, targeting that agent (not creating a new agent and not starting a workflow build).",
+		"Does not propose building a new workflow to satisfy the capability change on the agent.",
+		"Does not reclassify the request as a workflow change or suggest editing a workflow instead of the agent."
+	]
+}

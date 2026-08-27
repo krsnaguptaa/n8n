@@ -1,0 +1,18 @@
+{
+	"description": "AGENT-698 regression: a request for an agent on an unsupported chat channel (WhatsApp). The assistant must recognize WhatsApp is not a supported agent channel, explain the limitation, and offer the supported chat channels as alternatives — not improvise a workflow substitute or claim the channel is configured. Intent-resolution case (agents tier): graded on processExpectations, builds are never exercised.",
+	"conversation": [
+		{
+			"role": "user",
+			"text": "Build me an agent my team can @mention on WhatsApp to triage customer messages."
+		}
+	],
+	"complexity": "simple",
+	"tags": ["intent", "agent", "unsupported-channel", "regression"],
+	"datasets": ["agents"],
+	"processExpectations": [
+		"Recognizes that WhatsApp is not a supported agent channel before proposing any build, rather than attempting to configure it or delegate to the agent builder as if it were supported.",
+		"Explains that WhatsApp is unavailable for agents and offers the supported chat channels (such as Slack, Telegram, Discord, or Linear) as alternatives.",
+		"Does not propose building a workflow (for example a WhatsApp/Twilio node workflow) as a substitute for the unsupported agent channel.",
+		"Does not claim the WhatsApp channel is configured, available, or set up."
+	]
+}

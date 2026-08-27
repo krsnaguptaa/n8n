@@ -1,0 +1,97 @@
+{
+	"description": "AGENT-698 regression: both an agent and a workflow are in context, and the user gives an ambiguous modification request. The assistant must ask which target the user means (the existing agent or the workflow) before building, rather than assuming the workflow. Intent-resolution case (agents tier): graded on processExpectations, builds are never exercised. The inline seed restores one agent and one workflow, so the live turn is genuinely ambiguous between them.",
+	"seed": {
+		"mode": "inline",
+		"messages": [
+			{
+				"role": "user",
+				"text": "Build me an agent that triages customer messages, and a workflow that syncs new signups to our data warehouse."
+			},
+			{
+				"id": "seed-asst-1",
+				"type": "llm",
+				"role": "assistant",
+				"createdAt": "2020-01-01T00:00:01.000Z",
+				"content": [
+					{
+						"type": "text",
+						"text": "I've created your triage agent and your signups-sync workflow. The agent reads incoming customer messages and decides what to do; the workflow moves new signups into the warehouse on a schedule."
+					},
+					{
+						"type": "tool-call",
+						"toolName": "build-agent",
+						"input": {
+							"message": "Build an agent that triages customer messages.",
+							"name": "Support Triage"
+						},
+						"output": {
+							"ok": true,
+							"agentId": "agent-triage-001",
+							"agentRef": "support-triage",
+							"agentName": "Support Triage"
+						}
+					},
+					{
+						"type": "tool-call",
+						"toolName": "build-workflow",
+						"input": {
+							"message": "Build a workflow that syncs new signups to the data warehouse."
+						},
+						"output": {
+							"ok": true,
+							"workflowId": "wf-signups-001",
+							"workflowName": "Signups Sync [seed abc12345]"
+						}
+					}
+				]
+			}
+		],
+		"agents": [
+			{
+				"id": "agent-triage-001",
+				"config": {
+					"name": "Support Triage",
+					"model": "anthropic/claude-sonnet-4-5",
+					"instructions": "Triage incoming customer messages: assess urgency and decide what to do."
+				}
+			}
+		],
+		"workflows": [
+			{
+				"id": "wf-signups-001",
+				"name": "Signups Sync",
+				"nodes": [
+					{
+						"type": "n8n-nodes-base.scheduleTrigger",
+						"name": "Daily",
+						"parameters": {},
+						"position": [0, 0]
+					},
+					{
+						"type": "n8n-nodes-base.postgres",
+						"name": "Insert into warehouse",
+						"parameters": {},
+						"position": [220, 0]
+					}
+				],
+				"connections": {
+					"Daily": { "main": [[{ "node": "Insert into warehouse", "type": "main", "index": 0 }]] }
+				}
+			}
+		]
+	},
+	"conversation": [
+		{
+			"role": "user",
+			"text": "Add a daily summary of new signups to the data warehouse."
+		}
+	],
+	"complexity": "medium",
+	"tags": ["intent", "agent", "mixed-context", "clarification", "regression"],
+	"datasets": ["agents"],
+	"processExpectations": [
+		"Asks the user which target they mean — the existing Support Triage agent (a scheduled task on it) or the Signups Sync workflow (a new branch in the graph) — before building.",
+		"Does not assume the workflow is the target and start a workflow build without clarifying.",
+		"Does not silently apply the change to either artifact without first resolving the ambiguity."
+	]
+}
