@@ -415,9 +415,9 @@ export class GmailTrigger implements INodeType {
 
 		// May only permit a cursor advance when an exhausted page token proved the
 		// window complete. Every path that never completes a listing — the early
-		// pending return (which exits before the advance) or any thrown fetch/list
-		// — must leave it pessimistic, or a held cursor would advance past mail
-		// the failed poll never listed.
+		// return after the pending drain (which exits before the advance) or any
+		// thrown fetch/list — must leave it pessimistic, or a held cursor would
+		// advance past mail the failed poll never listed.
 		let windowFullyListed = false;
 
 		try {
@@ -506,9 +506,9 @@ export class GmailTrigger implements INodeType {
 				pagesListed < MAX_LIST_PAGES &&
 				Date.now() < pollDeadline
 			);
-			// A leftover token means the cap cut the listing short. Gmail lists newest
-			// first, so the remainder is older mail; a cursor moved past it would
-			// never list it again.
+			// A leftover token means the time budget or the page cap cut the listing
+			// short. Gmail lists newest first, so the remainder is older mail; a
+			// cursor moved past it would never list it again.
 			windowFullyListed = !pageToken;
 
 			// Pagination can repeat an id across pages when the mailbox shifts
@@ -529,13 +529,13 @@ export class GmailTrigger implements INodeType {
 				}
 
 				if (!messages.length && !allFetchedMessages.length) {
-					// No-progress valve: the page cap cut the listing short, yet every
-					// reachable id is already tracked. Holding again would repeat this
-					// tick forever — no backlog progress and no new mail. Give up loudly:
-					// jump the cursor to now and skip what the cap keeps unreachable.
+					// No-progress valve: the budget or page cap cut the listing short, yet
+					// every reachable id is already tracked. Holding again would repeat
+					// this tick forever — no backlog progress and no new mail. Give up
+					// loudly: jump the cursor to now and skip what stays out of reach.
 					if (!windowFullyListed) {
 						this.logger.warn(
-							'Gmail Trigger backlog cannot progress past the page cap; advancing past unlisted older messages',
+							"Gmail Trigger backlog cannot progress within one poll's reach; advancing past unlisted older messages",
 							{ node: node.name },
 						);
 						nodeStaticData.lastTimeChecked = +now;
@@ -545,7 +545,8 @@ export class GmailTrigger implements INodeType {
 				}
 			}
 
-			// Take only what fits in the remaining budget, store the rest as pending.
+			// Take only what fits in the remaining maxResults budget, store the rest
+			// as pending.
 			let messagesToProcess = messages;
 			let beyondBudgetIds: string[] = [];
 			if (shouldLimitMessages && messages.length > budget) {
@@ -621,9 +622,10 @@ export class GmailTrigger implements INodeType {
 				(nodeStaticData.pendingMessageIds?.length ?? 0) +
 				(nodeStaticData.possibleDuplicates?.length ?? 0);
 			if (trackedIds < MAX_TRACKED_BACKLOG_IDS) {
-				// Unlisted older mail exists beyond the page cap. Hold the cursor so later
-				// polls can still list it. The possibleDuplicates update below keeps every
-				// handled id filterable, so the held-cursor re-list cannot re-emit them.
+				// Unlisted older mail exists beyond this tick's reach. Hold the cursor so
+				// later polls can still list it. The possibleDuplicates update below keeps
+				// every handled id filterable, so the held-cursor re-list cannot re-emit
+				// them.
 				effectiveLastTimeChecked = +startDate;
 			} else {
 				// Give-up valve: holding again would grow the tracked-id state without
