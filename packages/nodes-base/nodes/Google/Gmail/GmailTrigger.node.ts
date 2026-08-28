@@ -322,6 +322,8 @@ export class GmailTrigger implements INodeType {
 		const shouldLimitMessages = node.typeVersion >= 1.4 && this.getMode() !== 'manual';
 		// How far this tick may reach before it must return — bounds listing and
 		// fetching time, not delivery volume (maxResults stays the per-tick bound).
+		// Only consulted on shouldLimitMessages paths; pre-1.4 and manual polls are
+		// unchanged.
 		const pollDeadline = Date.now() + this.getPollBudgetMs();
 		const maxResults = shouldLimitMessages
 			? (this.getNodeParameter('maxResults', 10) as number)
@@ -428,10 +430,13 @@ export class GmailTrigger implements INodeType {
 		let windowFullyListed = false;
 
 		try {
+			// Item-count budget (remaining maxResults) — distinct from the time
+			// budget behind pollDeadline.
 			let budget = maxResults;
 
-			// Process pending messages from previous poll first.
-			// These are IDs that were listed but not fetched last time due to maxResults.
+			// Process pending messages from a previous poll first. These are IDs that
+			// were listed but not fetched — maxResults, the poll budget, or a fetch
+			// error cut that tick short.
 			const pendingIds = nodeStaticData.pendingMessageIds ?? [];
 			if (shouldLimitMessages && pendingIds.length > 0) {
 				const idsToFetch = pendingIds.slice(0, budget);
@@ -448,6 +453,9 @@ export class GmailTrigger implements INodeType {
 					if (Date.now() >= pollDeadline) break;
 				}
 
+				// Safe to subtract the planned count even when the deadline broke the
+				// loop early: that same deadline forces the return below, so budget is
+				// never read again on this path.
 				budget -= idsToFetch.length;
 
 				// Record drained IDs in possibleDuplicates so Gmail's boundary-inclusive
@@ -496,6 +504,9 @@ export class GmailTrigger implements INodeType {
 			// the catch path continues to the cursor advance, and a stale `true`
 			// would skip everything the failed pages never showed.
 			windowFullyListed = false;
+			// The deadline sits in the loop condition: the do-while always lists page
+			// one, so an already-expired budget still makes progress (mirrors the
+			// fetch loops).
 			do {
 				const messagesResponse: MessageListResponse = await googleApiRequest.call(
 					this,
