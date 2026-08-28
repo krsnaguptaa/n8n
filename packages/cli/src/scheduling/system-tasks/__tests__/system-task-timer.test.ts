@@ -149,6 +149,16 @@ describe('SystemTaskTimer', () => {
 		expect(onFire).not.toHaveBeenCalled();
 	});
 
+	it('reports a fire time past the representable date range and stays stopped', () => {
+		const timer = createTimer({ kind: 'interval', intervalSeconds: Number.MAX_SAFE_INTEGER });
+
+		timer.start(new Date());
+
+		expect(onPlanError).toHaveBeenCalledTimes(1);
+		vi.advanceTimersByTime(10 * Time.days.toMilliseconds);
+		expect(onFire).not.toHaveBeenCalled();
+	});
+
 	it('stops firing once stopped', () => {
 		const timer = createTimer({ kind: 'interval', intervalSeconds: 60 });
 

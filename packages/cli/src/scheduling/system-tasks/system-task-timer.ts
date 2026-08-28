@@ -3,6 +3,7 @@ import type { Schedule } from '@n8n/scheduler';
 import { computeFirstRunAt, computeNextRunAt } from '@n8n/scheduler';
 import { ensureError } from '@n8n/utils/errors/ensure-error';
 import type { CronExpression } from 'n8n-workflow';
+import { UnexpectedError } from 'n8n-workflow';
 
 /**
  * Node fires a timeout longer than this straight away (the delay is a signed
@@ -67,7 +68,17 @@ export class SystemTaskTimer {
 			return;
 		}
 
-		const delayMs = next.getTime() - this.now();
+		const fireAtMs = next.getTime();
+
+		if (!Number.isFinite(fireAtMs)) {
+			this.timer = undefined;
+			this.onPlanError(
+				new UnexpectedError('A system task schedule plans past the representable date range'),
+			);
+			return;
+		}
+
+		const delayMs = fireAtMs - this.now();
 
 		// A whole occurrence already went by, so the process was stalled or suspended
 		// across it. The fire it belongs to still runs (the callback that got here is
