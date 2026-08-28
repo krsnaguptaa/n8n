@@ -316,6 +316,9 @@ export class GmailTrigger implements INodeType {
 		const simple = this.getNodeParameter('simple') as boolean;
 
 		const shouldLimitMessages = node.typeVersion >= 1.4 && this.getMode() !== 'manual';
+		// How far this tick may reach before it must return — bounds listing and
+		// fetching time, not delivery volume (maxResults stays the per-tick bound).
+		const pollDeadline = Date.now() + this.getPollBudgetMs();
 		const maxResults = shouldLimitMessages
 			? (this.getNodeParameter('maxResults', 10) as number)
 			: Infinity;
@@ -433,6 +436,8 @@ export class GmailTrigger implements INodeType {
 					// behind an already-advanced cursor — removing them up front would
 					// lose the unfetched ones for good.
 					nodeStaticData.pendingMessageIds = pendingIds.slice(index + 1);
+					// Checked after the fetch so every tick drains at least one id.
+					if (Date.now() >= pollDeadline) break;
 				}
 
 				budget -= idsToFetch.length;
@@ -449,8 +454,9 @@ export class GmailTrigger implements INodeType {
 					nodeStaticData.possibleDuplicates = Array.from(merged);
 				}
 
-				// If we still have pending IDs, don't list new messages yet.
-				if ((nodeStaticData.pendingMessageIds?.length ?? 0) > 0) {
+				// If we still have pending IDs — or the drain consumed the whole
+				// budget — don't list new messages yet.
+				if ((nodeStaticData.pendingMessageIds?.length ?? 0) > 0 || Date.now() >= pollDeadline) {
 					await simplifyResponseData();
 					return responseData.length > 0 ? [responseData] : null;
 				}
@@ -493,7 +499,12 @@ export class GmailTrigger implements INodeType {
 				messages.push(...(messagesResponse.messages ?? []));
 				pageToken = messagesResponse.nextPageToken;
 				pagesListed++;
-			} while (shouldLimitMessages && pageToken && pagesListed < MAX_LIST_PAGES);
+			} while (
+				shouldLimitMessages &&
+				pageToken &&
+				pagesListed < MAX_LIST_PAGES &&
+				Date.now() < pollDeadline
+			);
 			// A leftover token means the cap cut the listing short. Gmail lists newest
 			// first, so the remainder is older mail; a cursor moved past it would
 			// never list it again.
@@ -558,6 +569,8 @@ export class GmailTrigger implements INodeType {
 							...messagesToProcess.slice(index + 1).map((m) => m.id),
 							...beyondBudgetIds,
 						];
+						// Checked after the fetch so every tick fetches at least one message.
+						if (Date.now() >= pollDeadline) break;
 					}
 				}
 			}
