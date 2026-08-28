@@ -434,6 +434,29 @@ jobs:
           mode: validate
           job-results: ${{ toJSON(needs) }}
 
+  # The image tarball is scoped to one run: every consumer has finished with it
+  # by now, and a later run for the same SHA rebuilds via load-n8n-docker's
+  # fallback. Leaving it costs ~436 MB of shared storage per SHA until the
+  # 7-day inactivity eviction (DEVP-912).
+  #
+  # Only on success. A red run is the one someone re-runs, and a re-run should
+  # restore rather than rebuild.
+  cleanup-docker-image:
+    name: Cleanup Docker image
+    needs: [prepare-docker, sqlite-sanity, e2e, e2e-performance]
+    if: |
+      always() &&
+      needs.prepare-docker.result == 'success' &&
+      (needs.sqlite-sanity.result == 'success' || needs.sqlite-sanity.result == 'skipped') &&
+      (needs.e2e.result == 'success' || needs.e2e.result == 'skipped') &&
+      (needs.e2e-performance.result == 'success' || needs.e2e-performance.result == 'skipped')
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+    steps:
+      - name: Delete the image sticky disk
+        uses: useblacksmith/stickydisk-delete@b41313d28b8647d72114c9ba3c96bb04061562b6 # v1
+        with:
+          delete-key: n8n-docker-image-standard-${{ github.sha }}
+
   # Posts a QA metrics comparison comment on the PR.
   # Runs after all checks so any job can emit metrics before this reports.
   post-qa-metrics-comment:
