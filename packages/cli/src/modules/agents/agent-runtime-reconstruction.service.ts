@@ -588,6 +588,7 @@ export class AgentRuntimeReconstructionService {
 					integrationType,
 					userId,
 					supportsHitl,
+					backgroundTasksEnabled: Container.get(AgentsConfig).backgroundTasksEnabled,
 				});
 			}
 
