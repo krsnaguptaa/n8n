@@ -3,7 +3,7 @@ import nock from 'nock';
 
 import { testPollingTriggerNode } from '@test/nodes/TriggerHelpers';
 
-import { GmailTrigger } from '../GmailTrigger.node';
+import { GmailTrigger, MAX_LIST_PAGES } from '../GmailTrigger.node';
 import type { Message, ListMessage, MessageListResponse } from '../types';
 
 vi.mock('mailparser');
@@ -1611,10 +1611,11 @@ describe('GmailTrigger', () => {
 	});
 
 	describe('v1.4 - multi-page backlog pagination', () => {
-		// Contract under test: the list loop follows nextPageToken up to 20 pages.
-		// lastTimeChecked advances only when the token was exhausted; otherwise the
-		// cursor holds so unlisted older mail stays reachable. Give-up valve: once
-		// 5000 ids are already tracked, the poll advances instead of holding again.
+		// Contract under test: the list loop follows nextPageToken until the poll
+		// time budget runs out (page cap = runaway backstop). lastTimeChecked
+		// advances only when the token was exhausted; otherwise the cursor holds so
+		// unlisted older mail stays reachable. Give-up valve: once 5000 ids are
+		// already tracked, the poll advances instead of holding again.
 		const listPage = (ids: string[], nextPageToken?: string): MessageListResponse => ({
 			messages: ids.map((id) => createListMessage({ id })),
 			resultSizeEstimate: ids.length,
@@ -1710,10 +1711,11 @@ describe('GmailTrigger', () => {
 			};
 
 			mockLabels();
-			// 20 pages, every one of them with a continuation token. Page 21 is not
-			// mocked: a loop that overruns the cap hits an unmatched request, poll()
-			// swallows the error and returns null, and the assertions below fail.
-			const pages = Array.from({ length: 20 }, (_, page) => [`p${page}a`, `p${page}b`]);
+			// Cap-many pages, every one of them with a continuation token. The page
+			// after the cap is not mocked: a loop that overruns the cap hits an
+			// unmatched request, poll() swallows the error and returns null, and the
+			// assertions below fail.
+			const pages = Array.from({ length: MAX_LIST_PAGES }, (_, page) => [`p${page}a`, `p${page}b`]);
 			const allIds = pages.flat();
 			pages.forEach((ids, page) =>
 				mockList(listPage(ids, `token-${page + 1}`), page === 0 ? undefined : `token-${page}`),
@@ -1984,7 +1986,7 @@ describe('GmailTrigger', () => {
 			// tick forever: no backlog progress, no new mail, no warning. The poll
 			// must give up instead — advance and start fresh.
 			const initialTimestamp = 1000000;
-			const pages = Array.from({ length: 20 }, (_, page) => [`h${page}a`, `h${page}b`]);
+			const pages = Array.from({ length: MAX_LIST_PAGES }, (_, page) => [`h${page}a`, `h${page}b`]);
 			const handledIds = pages.flat();
 			const workflowStaticData: Record<string, Record<string, unknown>> = {
 				'Gmail Trigger': {
@@ -2032,6 +2034,37 @@ describe('GmailTrigger', () => {
 			});
 
 			expect(response?.[0]?.map((item) => item.json.id)).toEqual(['1']);
+		});
+
+		it('should list a window larger than 20 pages when the budget allows', async () => {
+			const workflowStaticData: Record<string, Record<string, unknown>> = {
+				'Gmail Trigger': { lastTimeChecked: 1000000 },
+			};
+
+			mockLabels();
+			// The time budget, not a small page cap, bounds listing reach: a
+			// 21-page window must be walked to token exhaustion so the cursor
+			// can advance without losing the unlisted remainder.
+			const pages = Array.from({ length: 21 }, (_, page) => [`q${page}`]);
+			pages.forEach((ids, page) =>
+				mockList(
+					listPage(ids, page === pages.length - 1 ? undefined : `token-${page + 1}`),
+					page === 0 ? undefined : `token-${page}`,
+				),
+			);
+			mockGet('q0', 6_000_000_000_000);
+			mockGet('q1', 5_000_000_000_000);
+
+			const { response } = await testPollingTriggerNode(GmailTrigger, {
+				node: { typeVersion: 1.4, parameters: { simple: true, maxResults: 2 } },
+				workflowStaticData,
+			});
+
+			expect(response?.[0]?.map((item) => item.json.id)).toEqual(['q0', 'q1']);
+			// Token exhausted: every unfetched id is tracked as pending, so the
+			// cursor advances instead of holding.
+			expect(workflowStaticData['Gmail Trigger'].pendingMessageIds).toEqual(pages.flat().slice(2));
+			expect(workflowStaticData['Gmail Trigger'].lastTimeChecked).toBe(6_000_000_000);
 		});
 
 		it('should stop listing when the poll budget is exhausted and hold the cursor', async () => {
@@ -2156,7 +2189,7 @@ describe('GmailTrigger', () => {
 			};
 
 			mockLabels();
-			const pages = Array.from({ length: 20 }, (_, page) => [`n${page}a`, `n${page}b`]);
+			const pages = Array.from({ length: MAX_LIST_PAGES }, (_, page) => [`n${page}a`, `n${page}b`]);
 			const allIds = pages.flat();
 			pages.forEach((ids, page) =>
 				mockList(listPage(ids, `token-${page + 1}`), page === 0 ? undefined : `token-${page}`),
@@ -2170,7 +2203,7 @@ describe('GmailTrigger', () => {
 			});
 
 			expect(response?.[0]).toHaveLength(2);
-			// Cap was hit (20 pages listed, token remaining) but the valve fires:
+			// The cap cut the listing short (token remaining) but the valve fires:
 			// advance instead of holding.
 			expect(workflowStaticData['Gmail Trigger'].lastTimeChecked).toBe(6_000_000_000);
 			// The valve skips only unlisted mail; listed-but-unfetched ids stay tracked.

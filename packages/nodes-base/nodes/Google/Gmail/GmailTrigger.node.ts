@@ -30,9 +30,10 @@ import type {
 	MessageListResponse,
 } from './types';
 
-// Bounds one poll's list requests. Hitting the cap does not lose mail: the
+// Runaway backstop for one poll's list requests — the poll time budget is the
+// working bound on listing reach. Hitting the cap does not lose mail: the
 // leftover page token makes the poll hold the cursor (see poll below).
-const MAX_LIST_PAGES = 20;
+export const MAX_LIST_PAGES = 500;
 // Tracked-id count (pending + boundary ids) at which the poll stops holding
 // the cursor and accepts skipping any unlisted remainder.
 const MAX_TRACKED_BACKLOG_IDS = 5_000;
