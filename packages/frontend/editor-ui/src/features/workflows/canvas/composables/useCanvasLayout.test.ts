@@ -367,7 +367,7 @@ describe('useCanvasLayout', () => {
 		expect(node2.x).toBeGreaterThan(node1.x);
 	});
 
-	describe('collapsed node groups', () => {
+	describe('node groups', () => {
 		const groupId = 'g1';
 		const chipId = `group:${groupId}`;
 
@@ -454,17 +454,17 @@ describe('useCanvasLayout', () => {
 			expect(rm1).toMatchObject({ x: 1008, y: 1008 });
 		});
 
-		test('lays out expanded group members individually and excludes the chip', () => {
-			const m1 = createCanvasGraphNode({ id: 'm1' });
-			const m2 = createCanvasGraphNode({ id: 'm2' });
+		test('lays out an expanded group as a unit, preserving member offsets and dropping the chip', () => {
+			const m1 = createCanvasGraphNode({ id: 'm1', position: { x: 1008, y: 1008 } });
+			const m2 = createCanvasGraphNode({ id: 'm2', position: { x: 1104, y: 1008 } });
 			const group = createCanvasGraphGroupNode({
 				id: groupId,
 				nodeIds: ['m1', 'm2'],
 				isCollapsed: false,
 				nodesRect: { x: 96, y: 96, width: 192, height: 96 },
+				position: { x: 944, y: 908 },
 			});
 
-			// Expanded: members are visible and connected normally.
 			const nodes = [m1, m2, group];
 			const connections: Array<[string, string]> = [['m1', 'm2']];
 
@@ -480,7 +480,174 @@ describe('useCanvasLayout', () => {
 			const rm2 = result.nodes.find((n) => n.id === 'm2');
 			assert(rm1);
 			assert(rm2);
-			expect(rm2.x).toBeGreaterThan(rm1.x);
+			expect(rm2.x - rm1.x).toBe(96);
+			expect(rm2.y - rm1.y).toBe(0);
+			expect(matchesGrid(result)).toBe(true);
+		});
+
+		test('keeps an expanded group clustered between its external neighbours', () => {
+			const m1 = createCanvasGraphNode({ id: 'm1', position: { x: 1008, y: 1008 } });
+			const m2 = createCanvasGraphNode({ id: 'm2', position: { x: 1104, y: 1008 } });
+			const before = createCanvasGraphNode({ id: 'before', position: { x: 0, y: 0 } });
+			const after = createCanvasGraphNode({ id: 'after', position: { x: 2000, y: 0 } });
+			const group = createCanvasGraphGroupNode({
+				id: groupId,
+				nodeIds: ['m1', 'm2'],
+				isCollapsed: false,
+				nodesRect: { x: 1008, y: 1008, width: 192, height: 96 },
+				position: { x: 944, y: 908 },
+			});
+
+			const nodes = [before, m1, m2, after, group];
+			const connections: Array<[string, string]> = [
+				['before', 'm1'],
+				['m2', 'after'],
+			];
+
+			const { layout } = createTestSetup(nodes, connections);
+			const result = layout('all');
+
+			const beforeResult = result.nodes.find((n) => n.id === 'before');
+			const afterResult = result.nodes.find((n) => n.id === 'after');
+			const rm1 = result.nodes.find((n) => n.id === 'm1');
+			const rm2 = result.nodes.find((n) => n.id === 'm2');
+			assert(beforeResult);
+			assert(afterResult);
+			assert(rm1);
+			assert(rm2);
+
+			expect(beforeResult.x).toBeLessThan(rm1.x);
+			expect(afterResult.x).toBeGreaterThan(rm2.x);
+			expect(rm2.x - rm1.x).toBe(96);
+			expect(rm2.y - rm1.y).toBe(0);
+		});
+
+		test('keeps expanded group members as plain nodes for a partial selection', () => {
+			const m1 = createCanvasGraphNode({ id: 'm1' });
+			const m2 = createCanvasGraphNode({ id: 'm2' });
+			const after = createCanvasGraphNode({ id: 'after' });
+			const group = createCanvasGraphGroupNode({
+				id: groupId,
+				nodeIds: ['m1', 'm2'],
+				isCollapsed: false,
+				nodesRect: { x: 96, y: 96, width: 192, height: 96 },
+			});
+
+			const nodes = [m1, m2, after, group];
+			const connections: Array<[string, string]> = [['m1', 'after']];
+
+			const { layout } = createTestSetup(nodes, connections, ['m1', 'after']);
+			const result = layout('selection');
+			const ids = result.nodes.map((n) => n.id);
+
+			expect(ids).toContain('m1');
+			expect(ids).toContain('after');
+			expect(ids).not.toContain('m2');
+			expect(ids).not.toContain(chipId);
+
+			const rm1 = result.nodes.find((n) => n.id === 'm1');
+			const afterResult = result.nodes.find((n) => n.id === 'after');
+			assert(rm1);
+			assert(afterResult);
+			expect(afterResult.x).toBeGreaterThan(rm1.x);
+		});
+
+		test('preserves an AI subtree inside an expanded group as a block', () => {
+			const before = createCanvasGraphNode({ id: 'before', position: { x: 0, y: 96 } });
+			const aiAgent = createCanvasGraphNode({
+				id: 'aiAgent',
+				position: { x: 384, y: 96 },
+				data: {
+					render: {
+						type: CanvasNodeRenderType.Default,
+						options: { configurable: true },
+					},
+				},
+			});
+			const aiTool = createCanvasGraphNode({
+				id: 'aiTool',
+				position: { x: 384, y: 240 },
+				data: {
+					render: {
+						type: CanvasNodeRenderType.Default,
+						options: { configuration: true },
+					},
+				},
+			});
+			const after = createCanvasGraphNode({ id: 'after', position: { x: 1000, y: 96 } });
+			const group = createCanvasGraphGroupNode({
+				id: groupId,
+				nodeIds: ['aiAgent', 'aiTool'],
+				isCollapsed: false,
+				nodesRect: { x: 384, y: 96, width: 96, height: 240 },
+				position: { x: 320, y: -4 },
+			});
+
+			const nodes = [before, aiAgent, aiTool, after, group];
+			const connections: Array<[string, string]> = [
+				['before', 'aiAgent'],
+				['aiTool', 'aiAgent'],
+				['aiAgent', 'after'],
+			];
+
+			const { layout } = createTestSetup(nodes, connections);
+			const result = layout('all');
+
+			const resultAgent = result.nodes.find((n) => n.id === 'aiAgent');
+			const resultTool = result.nodes.find((n) => n.id === 'aiTool');
+			assert(resultAgent);
+			assert(resultTool);
+
+			expect(resultTool.x - resultAgent.x).toBe(aiTool.position.x - aiAgent.position.x);
+			expect(resultTool.y - resultAgent.y).toBe(aiTool.position.y - aiAgent.position.y);
+		});
+
+		test('supports collapsed and expanded group units in the same layout', () => {
+			const c1 = createCanvasGraphNode({ id: 'c1', position: { x: 1008, y: 1008 } });
+			const c2 = createCanvasGraphNode({ id: 'c2', position: { x: 1104, y: 1008 } });
+			const e1 = createCanvasGraphNode({ id: 'e1', position: { x: 1600, y: 1008 } });
+			const e2 = createCanvasGraphNode({ id: 'e2', position: { x: 1696, y: 1008 } });
+			const collapsedGroup = createCanvasGraphGroupNode({
+				id: 'collapsed',
+				nodeIds: ['c1', 'c2'],
+				isCollapsed: true,
+				nodesRect: { x: 1008, y: 1008, width: 192, height: 96 },
+				position: { x: 944, y: 908 },
+			});
+			const expandedGroup = createCanvasGraphGroupNode({
+				id: 'expanded',
+				nodeIds: ['e1', 'e2'],
+				isCollapsed: false,
+				nodesRect: { x: 1600, y: 1008, width: 192, height: 96 },
+				position: { x: 1536, y: 908 },
+			});
+
+			const nodes = [c1, c2, e1, e2, collapsedGroup, expandedGroup];
+			const connections: Array<[string, string]> = [
+				['group:collapsed', 'e1'],
+				['e2', 'c1'],
+			];
+
+			const { layout } = createTestSetup(nodes, connections);
+			const result = layout('all');
+
+			const ids = result.nodes.map((n) => n.id);
+			expect(ids).not.toContain('group:collapsed');
+			expect(ids).not.toContain('group:expanded');
+
+			const rc1 = result.nodes.find((n) => n.id === 'c1');
+			const rc2 = result.nodes.find((n) => n.id === 'c2');
+			const re1 = result.nodes.find((n) => n.id === 'e1');
+			const re2 = result.nodes.find((n) => n.id === 'e2');
+			assert(rc1);
+			assert(rc2);
+			assert(re1);
+			assert(re2);
+
+			expect(rc2.x - rc1.x).toBe(96);
+			expect(rc2.y - rc1.y).toBe(0);
+			expect(re2.x - re1.x).toBe(96);
+			expect(re2.y - re1.y).toBe(0);
 		});
 	});
 });
