@@ -37,6 +37,9 @@ export const MAX_LIST_PAGES = 500;
 // Tracked-id count (pending + boundary ids) at which the poll stops holding
 // the cursor and accepts skipping any unlisted remainder.
 const MAX_TRACKED_BACKLOG_IDS = 5_000;
+// Consecutive polls that reach nothing new before the no-progress valve fires.
+// More than one sample is needed: a slow response alone can cut a listing short.
+const MAX_NO_PROGRESS_TICKS = 3;
 
 export class GmailTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -380,6 +383,10 @@ export class GmailTrigger implements INodeType {
 				date: getEmailDateAsSeconds(fullMessage),
 			});
 
+			// A fetched message is progress, whether it came from the pending queue or
+			// a fresh listing, so the no-progress run starts over.
+			nodeStaticData.noProgressTicks = 0;
+
 			if (!includeDrafts && fullMessage.labelIds?.includes('DRAFT')) {
 				return;
 			}
@@ -529,17 +536,26 @@ export class GmailTrigger implements INodeType {
 				}
 
 				if (!messages.length && !allFetchedMessages.length) {
-					// No-progress valve: the budget or page cap cut the listing short, yet
-					// every reachable id is already tracked. Holding again would repeat
-					// this tick forever — no backlog progress and no new mail. Give up
-					// loudly: jump the cursor to now and skip what stays out of reach.
+					// No-progress valve: the listing was cut short, yet every id this tick
+					// reached is already tracked. One such tick proves little — a slow
+					// response can cut the listing short where the next tick, with a fresh
+					// budget, reaches further. Only a run of them means the window is
+					// wedged; then give up loudly: jump the cursor to now and skip the
+					// unlisted remainder.
 					if (!windowFullyListed) {
+						const noProgressTicks = (nodeStaticData.noProgressTicks ?? 0) + 1;
+						if (noProgressTicks < MAX_NO_PROGRESS_TICKS) {
+							nodeStaticData.noProgressTicks = noProgressTicks;
+							return null;
+						}
+
 						this.logger.warn(
 							"Gmail Trigger backlog cannot progress within one poll's reach; advancing past unlisted older messages",
 							{ node: node.name },
 						);
 						nodeStaticData.lastTimeChecked = +now;
 						nodeStaticData.possibleDuplicates = [];
+						nodeStaticData.noProgressTicks = 0;
 					}
 					return null;
 				}
