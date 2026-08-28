@@ -12,13 +12,20 @@ import { NodeOperationError } from 'n8n-workflow';
 import type { Mocked } from 'vitest';
 
 import { LmChatDatabricks } from '../LmChatDatabricks.node';
+import { createDatabricksFetch, getDatabricksTokenProvider } from '../token-provider';
 
 vi.mock('@langchain/openai');
 vi.mock('@n8n/ai-utilities');
+vi.mock('../token-provider');
 
 const MockedChatOpenAI = vi.mocked(ChatOpenAI);
 const mockedMakeN8nLlmFailedAttemptHandler = vi.mocked(makeN8nLlmFailedAttemptHandler);
 const mockedGetProxyAgent = vi.mocked(getProxyAgent);
+const mockedGetDatabricksTokenProvider = vi.mocked(getDatabricksTokenProvider);
+const mockedCreateDatabricksFetch = vi.mocked(createDatabricksFetch);
+
+const mockTokenProvider = vi.fn(async () => 'test-token');
+const mockFetch = vi.fn() as unknown as typeof fetch;
 
 const mockCredential = {
 	host: 'https://my.databricks.com/',
@@ -58,6 +65,8 @@ describe('LmChatDatabricks', () => {
 
 		mockedMakeN8nLlmFailedAttemptHandler.mockReturnValue(vi.fn());
 		mockedGetProxyAgent.mockReturnValue({} as any);
+		mockedGetDatabricksTokenProvider.mockReturnValue(mockTokenProvider);
+		mockedCreateDatabricksFetch.mockReturnValue(mockFetch);
 		return ctx;
 	};
 
@@ -124,6 +133,17 @@ describe('LmChatDatabricks', () => {
 
 			const callArgs = MockedChatOpenAI.mock.calls[0][0];
 			expect(callArgs?.configuration?.fetch).toEqual(expect.any(Function));
+		});
+
+		it('should wire the token-provider fetch wrapper into ChatOpenAI', async () => {
+			const ctx = setupMockContext();
+
+			await node.supplyData.call(ctx, 0);
+
+			expect(mockedGetDatabricksTokenProvider).toHaveBeenCalledWith(mockNodeDef, mockCredential);
+			expect(mockedCreateDatabricksFetch).toHaveBeenCalledWith(mockTokenProvider);
+			const callArgs = MockedChatOpenAI.mock.calls[0][0];
+			expect(callArgs?.configuration?.fetch).toBe(mockFetch);
 		});
 
 		it('should read the model via resourceLocator value extraction', async () => {

@@ -43,6 +43,7 @@ export function getDatabricksTokenProvider(
 			return token.accessToken;
 		} catch (error) {
 			cached = undefined;
+			expiresAt = 0;
 			throw new NodeOperationError(node, 'Failed to retrieve Databricks access token', {
 				description: error instanceof Error ? error.message : undefined,
 			});

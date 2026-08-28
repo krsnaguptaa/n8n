@@ -24,8 +24,8 @@ async function searchModels(
 	this: ILoadOptionsFunctions,
 	filter?: string,
 ): Promise<INodeListSearchResult> {
-	const credentials = await this.getCredentials('databricksOAuth2Api');
-	const host = (credentials.host as string).replace(/\/$/, '');
+	const credentials = await this.getCredentials<DatabricksOAuth2Credential>('databricksOAuth2Api');
+	const host = credentials.host.replace(/\/$/, '');
 
 	const response: {
 		endpoints?: Array<{
