@@ -1,5 +1,5 @@
 node_modules
-.pnpm-store
+.pnpstore
 .DS_Store
 .tmp
 .tmp-schema-docs
